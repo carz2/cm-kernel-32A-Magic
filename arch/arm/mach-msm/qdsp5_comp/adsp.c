@@ -739,8 +739,8 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 	rpc_send_accepted_void_reply(rpc_cb_server_client, req->xid,
 				     RPC_ACCEPTSTAT_SUCCESS);
 
-	if (module->ops->modem_event != NULL)
-		module->ops->modem_event(module->driver_data, image);
+	/*if (module->ops->modem_event != NULL)
+		module->ops->modem_event(module->driver_data, image);*/
 done:
 	mutex_unlock(&module->lock);
 	event_addr = (uint32_t *)req;

@@ -83,7 +83,7 @@ static uint32_t discard_bytes;
 
 struct msm_adsp_ops audplay_aac_adsp_ops = {
 	.event = audplay_aac_dsp_event,
-	.modem_event = audplay_aac_modem_event,
+	/*.modem_event = audplay_aac_modem_event,*/
 };
 
 /* must be called with audio->lock held */

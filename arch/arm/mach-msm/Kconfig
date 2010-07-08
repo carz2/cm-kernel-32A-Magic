@@ -52,7 +52,7 @@ config MSM_AMSS_VERSION
 choice
 	prompt "AMSS modem firmware version"
 
-	default MSM_AMSS_VERSION_6335
+	default MSM_AMSS_VERSION_6355
 
 	config MSM_AMSS_VERSION_6210
 		bool "6.2.10"

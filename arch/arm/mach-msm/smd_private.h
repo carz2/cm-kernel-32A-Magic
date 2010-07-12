@@ -61,13 +61,7 @@ struct smem_shared {
 #define SMSM_V1_SIZE		(sizeof(unsigned) * 8)
 #define SMSM_V2_SIZE		(sizeof(unsigned) * 4)
 
-#ifdef CONFIG_MSM_SMD_PKG3
-struct smsm_interrupt_info {
-	uint32_t interrupt_mask;
-	uint32_t pending_interrupts;
-	uint32_t wakeup_reason;
-};
-#else
+#if defined(CONFIG_ARCH_QSD8X50)
 #define DEM_MAX_PORT_NAME_LEN (20)
 struct msm_dem_slave_data {
 	uint32_t sleep_time;
@@ -81,6 +75,21 @@ struct msm_dem_slave_data {
 	uint32_t rpc_proc;
 	char     smd_port_name[DEM_MAX_PORT_NAME_LEN];
 	uint32_t reserved2;
+};
+#else
+#define SMSM_MAX_PORT_NAME_LEN    20
+struct smsm_interrupt_info {
+	uint32_t interrupt_mask;
+	uint32_t pending_interrupts;
+	uint32_t wakeup_reason;
+	uint32_t aArm_rpc_prog;
+	uint32_t aArm_rpc_proc;
+	char aArm_smd_port_name[SMSM_MAX_PORT_NAME_LEN];
+	/* If the wakeup reason is GPIO then send the gpio info */
+	uint32_t aArm_gpio_info;
+	/*uint32_t interrupt_mask;
+	uint32_t pending_interrupts;
+	uint32_t wakeup_reason;*/
 };
 #endif
 
@@ -207,6 +216,7 @@ typedef enum {
 	SMEM_ID_VENDOR1,
 	SMEM_ID_VENDOR2,
 	SMEM_HW_SW_BUILD_ID,
+#if defined(CONFIG_ARCH_QSD8X50)
 	SMEM_SMD_BLOCK_PORT_BASE_ID,
 	SMEM_SMD_BLOCK_PORT_PROC0_HEAP = SMEM_SMD_BLOCK_PORT_BASE_ID + SMEM_NUM_SMD_CHANNELS,
 	SMEM_SMD_BLOCK_PORT_PROC1_HEAP = SMEM_SMD_BLOCK_PORT_PROC0_HEAP + SMEM_NUM_SMD_CHANNELS,
@@ -227,6 +237,11 @@ typedef enum {
 	SMEM_SMEM_LOG_POWER_EVENTS,
 	SMEM_ERR_CRASH_LOG,
 	SMEM_ERR_F3_TRACE_LOG,
+#else
+	SMEM_SMD_FIFO_BASE_ID,
+	SMEM_SMEM_LAST = SMEM_SMD_FIFO_BASE_ID + SMEM_NUM_SMD_CHANNELS,
+#endif
+
 	SMEM_NUM_ITEMS,
 } smem_mem_type;
 

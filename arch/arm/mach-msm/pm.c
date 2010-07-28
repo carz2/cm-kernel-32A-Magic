@@ -72,7 +72,7 @@ module_param_named(idle_spin_time, msm_pm_idle_spin_time, int, S_IRUGO | S_IWUSR
 #define A11S_STANDBY_CTL (MSM_CSR_BASE + 0x108)
 #define A11RAMBACKBIAS (MSM_CSR_BASE + 0x508)
 
-
+#if defined(CONFIG_ARCH_QSD8X50)
 #define DEM_MASTER_BITS_PER_CPU             6
 
 /* Power Master State Bits - Per CPU */
@@ -101,18 +101,17 @@ module_param_named(idle_spin_time, msm_pm_idle_spin_time, int, S_IRUGO | S_IWUSR
 #define DEM_SLAVE_SMSM_RESET                (0x0100)
 #define DEM_SLAVE_SMSM_PWRC_SUSPEND         (0x0200)
 
-#ifndef CONFIG_ARCH_MSM_SCORPION
-#define PM_SMSM_WRITE_STATE	SMSM_STATE_APPS
-#define PM_SMSM_READ_STATE	SMSM_STATE_MODEM
-
-#define PM_SMSM_WRITE_RUN	SMSM_RUN
-#define PM_SMSM_READ_RUN	SMSM_RUN
-#else
 #define PM_SMSM_WRITE_STATE	SMSM_STATE_APPS_DEM
 #define PM_SMSM_READ_STATE	SMSM_STATE_POWER_MASTER_DEM
 
 #define PM_SMSM_WRITE_RUN	DEM_SLAVE_SMSM_RUN
 #define PM_SMSM_READ_RUN	DEM_MASTER_SMSM_RUN
+#else
+#define PM_SMSM_WRITE_STATE     SMSM_STATE_APPS
+#define PM_SMSM_READ_STATE      SMSM_STATE_MODEM
+
+#define PM_SMSM_WRITE_RUN       SMSM_RUN
+#define PM_SMSM_READ_RUN        SMSM_RUN
 #endif
 
 int msm_pm_collapse(void);
@@ -233,31 +232,7 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 	if (msm_pm_debug_mask & MSM_PM_DEBUG_SUSPEND)
 		printk(KERN_INFO "msm_sleep(): mode %d delay %u idle %d\n",
 		       sleep_mode, sleep_delay, from_idle);
-
-#ifndef CONFIG_ARCH_MSM_SCORPION
-	switch (sleep_mode) {
-	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
-		enter_state = SMSM_PWRC;
-		enter_wait_set = SMSM_RSA;
-		exit_state = SMSM_WFPI;
-		exit_wait_clear = SMSM_RSA;
-		break;
-	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_SUSPEND:
-		enter_state = SMSM_PWRC_SUSPEND;
-		enter_wait_set = SMSM_RSA;
-		exit_state = SMSM_WFPI;
-		exit_wait_clear = SMSM_RSA;
-		break;
-	case MSM_PM_SLEEP_MODE_APPS_SLEEP:
-		enter_state = SMSM_SLEEP;
-		exit_state = SMSM_SLEEPEXIT;
-		exit_wait_any_set = SMSM_SLEEPEXIT;
-		break;
-	default:
-		enter_state = 0;
-		exit_state = 0;
-	}
-#else
+#if defined(CONFIG_ARCH_QSD8X50)
 	switch (sleep_mode) {
 	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
 		enter_state = DEM_SLAVE_SMSM_PWRC;
@@ -278,6 +253,29 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 		enter_wait_set = DEM_MASTER_SMSM_SLEEP;
 		exit_state = DEM_SLAVE_SMSM_SLEEP_EXIT;
 		exit_wait_any_set = DEM_MASTER_SMSM_SLEEP_EXIT;
+		break;
+	default:
+		enter_state = 0;
+		exit_state = 0;
+	}
+#else
+	switch (sleep_mode) {
+	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
+		enter_state = SMSM_PWRC;
+		enter_wait_set = SMSM_RSA;
+		exit_state = SMSM_WFPI;
+		exit_wait_clear = SMSM_RSA;
+		break;
+	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_SUSPEND:
+		enter_state = SMSM_PWRC_SUSPEND;
+		enter_wait_set = SMSM_RSA;
+		exit_state = SMSM_WFPI;
+		exit_wait_clear = SMSM_RSA;
+		break;
+	case MSM_PM_SLEEP_MODE_APPS_SLEEP:
+		enter_state = SMSM_SLEEP;
+		exit_state = SMSM_SLEEPEXIT;
+		exit_wait_any_set = SMSM_SLEEPEXIT;
 		break;
 	default:
 		enter_state = 0;
@@ -345,7 +343,9 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 	}
 
 	if (sleep_mode <= MSM_PM_SLEEP_MODE_RAMP_DOWN_AND_WAIT_FOR_INTERRUPT) {
+
 		pm_saved_acpu_clk_rate = acpuclk_power_collapse();
+
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_CLOCK)
 			printk(KERN_INFO "msm_sleep(): %ld enter power collapse"
 			       "\n", pm_saved_acpu_clk_rate);
@@ -391,7 +391,9 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_CLOCK)
 			printk(KERN_INFO "msm_sleep(): exit power collapse %ld"
 			       "\n", pm_saved_acpu_clk_rate);
+
 		if (acpuclk_set_rate(pm_saved_acpu_clk_rate, 1) < 0)
+
 			printk(KERN_ERR "msm_sleep(): clk_set_rate %ld "
 			       "failed\n", pm_saved_acpu_clk_rate);
 
@@ -701,7 +703,7 @@ void msm_pm_set_max_sleep_time(int64_t max_sleep_time_ns)
 }
 EXPORT_SYMBOL(msm_pm_set_max_sleep_time);
 
-#if defined(CONFIG_EARLYSUSPEND) && defined(CONFIG_ARCH_MSM_SCORPION)
+#ifdef CONFIG_EARLYSUSPEND
 /* axi 128 screen on, 61mhz screen off */
 static void axi_early_suspend(struct early_suspend *handler) {
 	axi_rate = 0;
@@ -722,7 +724,7 @@ static struct early_suspend axi_screen_suspend = {
 
 static void __init msm_pm_axi_init(void)
 {
-#if defined(CONFIG_EARLYSUSPEND) && defined(CONFIG_ARCH_MSM_SCORPION)
+#ifdef CONFIG_EARLYSUSPEND
 	axi_clk = clk_get(NULL, "ebi1_clk");
 	if (IS_ERR(axi_clk)) {
 		int result = PTR_ERR(axi_clk);
@@ -743,7 +745,11 @@ static int __init msm_pm_init(void)
 	pm_power_off = msm_pm_power_off;
 	arm_pm_restart = msm_pm_restart;
 	msm_pm_max_sleep_time = 0;
+#if defined(CONFIG_ARCH_MSM_SCORPION)
+#ifdef CONFIG_AXI_SCREEN_POLICY
 	msm_pm_axi_init();
+#endif
+#endif
 
 	register_reboot_notifier(&msm_reboot_notifier);
 

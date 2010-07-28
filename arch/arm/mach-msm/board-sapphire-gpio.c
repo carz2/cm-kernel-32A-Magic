@@ -21,7 +21,7 @@
 #include <linux/io.h>
 #include <linux/gpio.h>
 #include <asm/mach-types.h>
-
+#include <mach/vreg.h>
 #include "gpio_chip.h"
 #include "board-sapphire.h"
 

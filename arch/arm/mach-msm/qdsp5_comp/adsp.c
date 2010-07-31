@@ -1087,9 +1087,9 @@ static int msm_adsp_probe(struct platform_device *pdev)
 	rc = adsp_init_info(&adsp_info);
 	if (rc)
 		return rc;
-	adsp_info.send_irq += MSM_AD5_BASE;
-	adsp_info.read_ctrl += MSM_AD5_BASE;
-	adsp_info.write_ctrl += MSM_AD5_BASE;
+	adsp_info.send_irq += (uint32_t) MSM_AD5_BASE;
+	adsp_info.read_ctrl += (uint32_t) MSM_AD5_BASE;
+	adsp_info.write_ctrl += (uint32_t) MSM_AD5_BASE;
 	count = adsp_info.module_count;
 
 	adsp_modules = kzalloc(

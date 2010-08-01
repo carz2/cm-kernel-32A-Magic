@@ -263,7 +263,6 @@ void config_sapphire_camera_off_gpios(void);
 int sapphire_get_smi_size(void);
 unsigned int sapphire_get_hwid(void);
 unsigned int sapphire_get_skuid(void);
-unsigned int sapphire_get_die_size(void);
 unsigned int is_12pin_camera(void);
 int sapphire_is_5M_camera(void);
 int sapphire_gpio_write(struct gpio_chip *chip, unsigned n, unsigned on);

@@ -221,7 +221,7 @@ static int htc_is_cable_in(void)
  * return 0 for no errors, to indicate it follows policy.
  * non zero otherwise.
  **/
-static int __htc_power_policy(void)
+/*static int __htc_power_policy(void)
 {
 	if (!zcharge_enabled)
 		return 0;
@@ -230,12 +230,12 @@ static int __htc_power_policy(void)
 		return 1;
 
 	return 0;
-}
+}*/
 
 /*
  * Jay, 7/1/09'
  */
-static int htc_power_policy(struct notifier_block *nfb,                 
+/*static int htc_power_policy(struct notifier_block *nfb,                 
 		unsigned long action, void *ignored)                              
 {       
 	int rc;                                                                         
@@ -248,7 +248,7 @@ static int htc_power_policy(struct notifier_block *nfb,
 			return NOTIFY_OK;
 	}
 	return NOTIFY_DONE;
-}                                                                                
+}  */                                                                              
 #if defined(CONFIG_DEBUG_FS)
 int htc_battery_set_charging(batt_ctl_t ctl);
 static int batt_debug_set(void *data, u64 val)

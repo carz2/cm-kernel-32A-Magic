@@ -196,6 +196,7 @@ int audpp_send_queue2(void *cmd, unsigned len);
 int audpp_send_queue3(void *cmd, unsigned len);
 
 int audpp_pause(unsigned id, int pause);
+int audpp_flush(unsigned id);
 int audpp_set_volume_and_pan(unsigned id, unsigned volume, int pan);
 void audpp_avsync(int id, unsigned rate);
 unsigned audpp_avsync_sample_count(int id);

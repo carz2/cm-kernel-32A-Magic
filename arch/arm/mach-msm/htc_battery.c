@@ -93,6 +93,7 @@ typedef enum {
  * And it's also the same as htc_cable_status_update()
  */
 typedef enum {
+	CHARGER_UNKNOWN = -1,
 	CHARGER_BATTERY = 0,
 	CHARGER_USB,
 	CHARGER_AC

@@ -20,6 +20,14 @@
 #ifndef __ARCH_ARM_MACH_MSM_ACPUCLOCK_H
 #define __ARCH_ARM_MACH_MSM_ACPUCLOCK_H
 
+enum setrate_reason {
+	SETRATE_CPUFREQ = 0,
+	SETRATE_SWFI,
+	SETRATE_PC,
+	SETRATE_PC_IDLE,
+};
+
+#if defined(CONFIG_ARCH_MSM_SCORPION)
 int acpuclk_set_rate(unsigned long rate, int for_power_collapse);
 unsigned long acpuclk_get_rate(void);
 uint32_t acpuclk_get_switch_time(void);

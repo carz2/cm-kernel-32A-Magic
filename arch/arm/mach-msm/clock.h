@@ -91,7 +91,7 @@ struct clk_handle {
 #define USB_HS_PCLK		37  /* High speed USB pbus clock */
 #define USB_OTG_CLK		38  /* Full speed USB clock */
 #define VDC_CLK			39  /* Video controller clock */
-#if CONFIG_MSM_AMSS_VERSION >= 6350 || defined(CONFIG_ARCH_QSD8X50)
+#if defined(CONFIG_ARCH_QSD8X50) || defined(CONFIG_ARCH_MSM7227) || defined(CONFIG_ARCH_MSM7X00A)
 #define VFE_MDC_CLK		40  /* VFE MDDI client clock */
 #define VFE_CLK			41  /* Camera / Video Front End clock */
 #else

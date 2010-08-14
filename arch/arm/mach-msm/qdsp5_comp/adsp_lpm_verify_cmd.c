@@ -39,8 +39,7 @@ int adsp_lpm_verify_cmd(struct msm_adsp_module *module,
 
 	if (cmd_id == LPM_CMD_START) {
 		if (cmd_size != sizeof(lpm_cmd_start)) {
-			pr_err("adsp: module %s:"
-					" wrong size %d, expect %d\n",
+			printk(KERN_ERR "adsp: module %s: wrong size %d, expect %d\n",
 				module->name, cmd_size, sizeof(lpm_cmd_start));
 			return -1;
 		}

@@ -248,7 +248,7 @@ static int audio_in_disable(struct audio_in *audio)
 static void audpre_dsp_event(void *data, unsigned id, size_t len,
 			    void (*getevent)(void *ptr, size_t len))
 {
-	uint16_t msg[2];
+	uint16_t msg[6]; /* may be a 32-bit event, which we ignore */
 	getevent(msg, sizeof(msg));
 
 	switch (id) {
@@ -305,7 +305,7 @@ static void audrec_dsp_event(void *data, unsigned id, size_t len,
 			    void (*getevent)(void *ptr, size_t len))
 {
 	struct audio_in *audio = data;
-	uint16_t msg[3];
+	uint16_t msg[6]; /* may be a 32-bit event, which we ignore */
 	getevent(msg, sizeof(msg));
 
 	switch (id) {
@@ -334,8 +334,7 @@ static void audrec_dsp_event(void *data, unsigned id, size_t len,
 		pr_err("audrec: ERROR %x\n", msg[0]);
 		break;
 	case AUDREC_MSG_PACKET_READY_MSG:
-		/*REC_DBG("type %x, count %d",
-		msg[0], (msg[1] | (msg[2] << 16)));*/
+/* REC_DBG("type %x, count %d", msg[0], (msg[1] | (msg[2] << 16))); */
 		audio_in_get_dsp_frames(audio);
 		break;
 	default:
@@ -352,12 +351,13 @@ struct msm_adsp_ops audrec_adsp_ops = {
 };
 
 
-#define audio_send_queue_pre(audio, cmd,len) \
+#define audio_send_queue_pre(audio, cmd, len) \
 	msm_adsp_write(audio->audpre, QDSP_uPAudPreProcCmdQueue, cmd, len)
-#define audio_send_queue_recbs(audio, cmd,len) \
+#define audio_send_queue_recbs(audio, cmd, len) \
 	msm_adsp_write(audio->audrec, QDSP_uPAudRecBitStreamQueue, cmd, len)
-#define audio_send_queue_rec(audio, cmd,len) \
-	msm_adsp_write(audio->audrec, QDSP_uPAudRecCmdQueue, cmd, len)
+#define audio_send_queue_rec(audio, cmd, len) \
+	msm_adsp_write(audio->audrec, \
+	QDSP_uPAudRecCmdQueue, cmd, len)
 
 static int audio_dsp_set_agc(struct audio_in *audio)
 {
@@ -539,7 +539,7 @@ static int audio_in_encoder_config(struct audio_in *audio)
 		audio->in[n].data = data + 4;
 		if (audio->type == AUDREC_CMD_TYPE_0_INDEX_WAV)
 			data += (4 + (audio->channel_mode ? 2048 : 1024));
-		else
+		else if (audio->type == AUDREC_CMD_TYPE_0_INDEX_AAC)
 			data += (4 + 768);
 	}
 
@@ -751,6 +751,8 @@ static ssize_t audio_in_read(struct file *file,
 			pr_err("audio_in: short read\n");
 			break;
 		}
+		if (audio->type == AUDREC_CMD_TYPE_0_INDEX_AAC)
+			break; /* AAC only read one frame */
 	}
 	mutex_unlock(&audio->read_lock);
 
@@ -816,7 +818,6 @@ static int audio_in_open(struct inode *inode, struct file *file)
 	if (rc)
 		goto done;
 
-	audio->audmgr.handle = 0xFFFF;
 	audio->dsp_cnt = 0;
 	audio->stopped = 0;
 
@@ -940,6 +941,7 @@ struct miscdevice audpre_misc = {
 
 static int __init audio_in_init(void)
 {
+	int rc;
 	the_audio_in.data = dma_alloc_coherent(NULL, DMASZ,
 						&the_audio_in.phys, GFP_KERNEL);
 	if (!the_audio_in.data) {
@@ -952,7 +954,13 @@ static int __init audio_in_init(void)
 	mutex_init(&the_audio_in.read_lock);
 	spin_lock_init(&the_audio_in.dsp_lock);
 	init_waitqueue_head(&the_audio_in.wait);
-	return (misc_register(&audio_in_misc) || misc_register(&audpre_misc));
+	rc = misc_register(&audio_in_misc);
+	if (!rc) {
+		rc = misc_register(&audpre_misc);
+		if (rc < 0)
+			misc_deregister(&audio_in_misc);
+	}
+	return rc;
 }
 
 device_initcall(audio_in_init);

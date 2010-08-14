@@ -83,7 +83,7 @@ static uint32_t discard_bytes;
 
 struct msm_adsp_ops audplay_aac_adsp_ops = {
 	.event = audplay_aac_dsp_event,
-	/*.modem_event = audplay_aac_modem_event,*/
+	.modem_event = audplay_aac_modem_event,
 };
 
 /* must be called with audio->lock held */
@@ -632,8 +632,10 @@ static ssize_t audio_write(struct file *file, const char __user *buf,
 		sched_setscheduler(current, old_policy, &v);
 		if (likely(!cap_nice)) {
 			struct cred *new = prepare_creds();
-			cap_lower(new->cap_effective, CAP_SYS_NICE);
-			commit_creds(new);
+			if (new != NULL) {
+			    cap_lower(new->cap_effective, CAP_SYS_NICE);
+			    commit_creds(new);
+			}
 		}
 	}
 

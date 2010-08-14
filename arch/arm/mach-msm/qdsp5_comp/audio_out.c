@@ -569,9 +569,11 @@ static ssize_t audio_write(struct file *file, const char __user *buf,
 		sched_setscheduler(current, old_policy, &v);
 		if (likely(!cap_nice)) {
 			struct cred *new = prepare_creds();
-			cap_lower(new->cap_effective, CAP_SYS_NICE);
-			commit_creds(new);
-			sched_setscheduler(current, SCHED_RR, &s);
+			if (new != NULL) {
+			    cap_lower(new->cap_effective, CAP_SYS_NICE);
+			    commit_creds(new);
+			    sched_setscheduler(current, SCHED_RR, &s);
+			}
 		}
 	}
 

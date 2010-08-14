@@ -283,7 +283,6 @@ int audmgr_enable(struct audmgr *am, struct audmgr_config *cfg)
 	    BUG();
 	}
 
-	msleep(50);
 	if (am->state == STATE_ENABLED)
 		return 0;
 

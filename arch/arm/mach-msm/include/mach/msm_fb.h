@@ -57,9 +57,15 @@ struct msm_panel_data {
 	int (*blank)(struct msm_panel_data *);
 	/* turns on the panel */
 	int (*unblank)(struct msm_panel_data *);
+	/* for msmfb shutdown() */
+	int (*shutdown)(struct msm_panel_data *);
 	void (*wait_vsync)(struct msm_panel_data *);
 	void (*request_vsync)(struct msm_panel_data *, struct msmfb_callback *);
 	void (*clear_vsync)(struct msm_panel_data *);
+	void (*dump_vsync)(void);
+	/* change timing on the fly */
+	int (*adjust_timing)(struct msm_panel_data *, struct msm_lcdc_timing *,
+			u32 xres, u32 yres);
 	/* from the enum above */
 	unsigned interface_type;
 	/* data to be passed to the fb driver */
@@ -75,6 +81,8 @@ struct msm_mddi_client_data {
 	void (*activate_link)(struct msm_mddi_client_data *);
 	void (*remote_write)(struct msm_mddi_client_data *, uint32_t val,
 			     uint32_t reg);
+	void (*remote_write_vals)(struct msm_mddi_client_data *, uint8_t * val,
+			     uint32_t reg, unsigned int nr_bytes);
 	uint32_t (*remote_read)(struct msm_mddi_client_data *, uint32_t reg);
 	void (*auto_hibernate)(struct msm_mddi_client_data *, int);
 	/* custom data that needs to be passed from the board file to a 
@@ -182,12 +190,32 @@ struct msm_mddi_bridge_platform_data {
 		     struct msm_mddi_client_data *);
 	int (*unblank)(struct msm_mddi_bridge_platform_data *,
 		       struct msm_mddi_client_data *);
+	int (*shutdown)(struct msm_mddi_bridge_platform_data *,
+		       struct msm_mddi_client_data *);
 	struct msm_fb_data fb_data;
 
 	/* board file will identify what capabilities the panel supports */
 	uint32_t panel_caps;
 };
 
+/*
+ * This is used to communicate event between msm_fb, mddi, mddi_client, 
+ * and board.
+ * It's mainly used to reset the display system.
+ * Also, it is used for battery power policy.
+ *
+ */
+#define NOTIFY_MDDI     0x00000000
+#define NOTIFY_POWER    0x00000001
+#define NOTIFY_MSM_FB   0x00000010
 
+extern int register_display_notifier(struct notifier_block *nb);
+extern int display_notifier_call_chain(unsigned long val, void *data);
+ 
+#define display_notifier(fn, pri) {                     \
+	static struct notifier_block fn##_nb =          \
+	{ .notifier_call = fn, .priority = pri };       \
+	register_display_notifier(&fn##_nb);		\
+}
 
 #endif

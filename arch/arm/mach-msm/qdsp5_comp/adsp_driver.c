@@ -20,6 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
+#include <mach/htc_pwrsink.h>
 #include <linux/slab.h>
 
 #include "adsp.h"
@@ -500,6 +501,11 @@ static int adsp_release(struct inode *inode, struct file *filp)
 	rc = adsp_pmem_del(module);
 
 	msm_adsp_put(module);
+	if (strcmp(adev->name, "VIDEOENCTASK") == 0) {
+		pr_info("VIDEOENCTASK is closed, unset PWRSINK_VIDEO\n");
+		/* video recording end */
+		htc_pwrsink_set(PWRSINK_VIDEO, 0);
+	}
 	return rc;
 }
 
@@ -565,6 +571,12 @@ static int adsp_open(struct inode *inode, struct file *filp)
 		return rc;
 
 	pr_info("adsp_open() module '%s' adev %p\n", adev->name, adev);
+	if (strcmp(adev->name, "VIDEOENCTASK") == 0) {
+		pr_info("VIDEOENCTASK is opened, set PWRSINK_VIDEO\n");
+		/* video recording start */
+		htc_pwrsink_set(PWRSINK_VIDEO, 100);
+	}
+
 	filp->private_data = adev;
 	adev->abort = 0;
 	INIT_HLIST_HEAD(&adev->module->pmem_regions);

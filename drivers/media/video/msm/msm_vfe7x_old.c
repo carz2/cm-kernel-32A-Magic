@@ -55,6 +55,11 @@ static uint8_t vfestopped;
 
 static struct stop_event stopevent;
 
+static struct clk *ebi1_clk;
+static const char *const clk_name = "ebi1_clk";
+
+static uint8_t vfe_operationmode; /*1 for yuv snapshot, 0 for other*/
+
 static void vfe_7x_convert(struct msm_vfe_phy_info *pinfo,
 			   enum vfe_resp_msg type,
 			   void *data, void **ext, int *elen)
@@ -231,6 +236,13 @@ static void vfe_7x_release(struct platform_device *pdev)
 {
 	struct msm_sensor_ctrl *sctrl =
 		&((struct msm_sync *)vfe_syncdata)->sctrl;
+
+	if (ebi1_clk) {
+		clk_set_rate(ebi1_clk, 0);
+		clk_put(ebi1_clk);
+		ebi1_clk = 0;
+	}
+
 	mutex_lock(&vfe_lock);
 	vfe_syncdata = NULL;
 	mutex_unlock(&vfe_lock);
@@ -260,6 +272,19 @@ static int vfe_7x_init(struct msm_vfe_callback *presp,
 		       struct platform_device *dev)
 {
 	int rc = 0;
+
+	ebi1_clk = clk_get(NULL, clk_name);
+	if (!ebi1_clk) {
+		pr_err("%s: could not get %s\n", __func__, clk_name);
+		return -EIO;
+	}
+
+	rc = clk_set_rate(ebi1_clk, 128000000);
+	if (rc < 0) {
+		pr_err("%s: clk_set_rate(%s) failed: %d\n", __func__,
+			clk_name, rc);
+		return rc;
+	}
 
 	init_waitqueue_head(&stopevent.wait);
 	stopevent.timeout = 200;

@@ -334,7 +334,7 @@ static void audpp_modem_event(void *data, uint32_t image)
 
 static struct msm_adsp_ops adsp_ops = {
 	.event = audpp_dsp_event,
-	/*.modem_event = audpp_modem_event,*/
+	.modem_event = audpp_modem_event,
 };
 
 static void audpp_fake_event(struct audpp_state *audpp, int id,

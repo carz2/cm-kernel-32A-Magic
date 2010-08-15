@@ -58,8 +58,6 @@ static struct stop_event stopevent;
 static struct clk *ebi1_clk;
 static const char *const clk_name = "ebi1_clk";
 
-static uint8_t vfe_operationmode; /*1 for yuv snapshot, 0 for other*/
-
 static void vfe_7x_convert(struct msm_vfe_phy_info *pinfo,
 			   enum vfe_resp_msg type,
 			   void *data, void **ext, int *elen)

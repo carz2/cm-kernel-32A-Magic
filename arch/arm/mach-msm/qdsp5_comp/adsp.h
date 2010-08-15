@@ -66,14 +66,12 @@ struct adsp_module_info {
 };
 
 #define ADSP_EVENT_MAX_SIZE 496
-#define EVENT_LEN	12
-#define EVENT_MSG_ID	((uint16_t)~0)
 
 struct adsp_event {
 	struct list_head list;
 	uint32_t size; /* always in bytes */
 	uint16_t msg_id;
-	uint16_t type; /* 0 for msgs (from aDSP), -1 for events (from ARM9) */
+	uint16_t type; /* 0 for msgs (from aDSP), 1 for events (from ARM9) */
 	int is16; /* always 0 (msg is 32-bit) when the event type is 1(ARM9) */
 	union {
 		uint16_t msg16[ADSP_EVENT_MAX_SIZE / 2];
@@ -110,13 +108,11 @@ struct adsp_info {
 	uint32_t events_received;
 	uint32_t event_backlog_max;
 
-#if CONFIG_MSM_AMSS_VERSION >= 6350
 	/* rpc_client for init_info */
-	struct msm_rpc_endpoint *init_info_rpc_client;
-	struct adsp_rtos_mp_mtoa_init_info_type *init_info_ptr;
+	struct msm_rpc_endpoint	*init_info_rpc_client;
+	struct adsp_rtos_mp_mtoa_init_info_type	*init_info_ptr;
 	wait_queue_head_t init_info_wait;
-	unsigned init_info_state;
-#endif
+	uint32_t init_info_state;
 };
 
 #define RPC_ADSP_RTOS_ATOM_PROG 0x3000000a
@@ -125,22 +121,8 @@ struct adsp_info {
 #define RPC_ADSP_RTOS_MTOA_NULL_PROC 0
 #define RPC_ADSP_RTOS_APP_TO_MODEM_PROC 2
 #define RPC_ADSP_RTOS_MODEM_TO_APP_PROC 2
-
-#if CONFIG_MSM_AMSS_VERSION == 6355
-#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x10001,0)
-#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0x20001,0) /* must be actual vers */
-#define MSM_ADSP_DRIVER_NAME "rs3000000a:0x10001"
-#elif (CONFIG_MSM_AMSS_VERSION == 6220) || (CONFIG_MSM_AMSS_VERSION == 6225)
-#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x71d1094b, 0)
-#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0xee3a9966, 0)
-#define MSM_ADSP_DRIVER_NAME "rs3000000a:71d1094b"
-#elif CONFIG_MSM_AMSS_VERSION == 6210
-#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x20f17fd3, 0)
-#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0x75babbd6, 0)
-#define MSM_ADSP_DRIVER_NAME "rs3000000a:20f17fd3"
-#else
-#error "Unknown AMSS version"
-#endif
+#define RPC_ADSP_RTOS_MODEM_TO_APP_EVENT_INFO_PROC 3
+#define RPC_ADSP_RTOS_MODEM_TO_APP_INIT_INFO_PROC 4
 
 enum rpc_adsp_rtos_proc_type {
 	RPC_ADSP_RTOS_PROC_NONE = 0,
@@ -189,6 +171,9 @@ enum qdsp_image_type {
 	QDSP_IMAGE_32BIT_DUMMY = 0x10000
 };
 
+#define	EVENT_LEN       12
+#define	EVENT_MSG_ID    (~0)
+
 struct adsp_rtos_mp_mtoa_header_type {
 	enum rpc_adsp_rtos_mod_status_type  event;
 	enum rpc_adsp_rtos_proc_type        proc_id;
@@ -214,6 +199,12 @@ struct adsp_rtos_mp_mtoa_type {
 struct queue_to_offset_type {
 	uint32_t	queue;
 	uint32_t	offset;
+};
+
+struct mod_to_queue_offsets {
+	uint32_t        module;
+	uint32_t        q_type;
+	uint32_t        q_max_len;
 };
 
 struct adsp_rtos_mp_mtoa_init_info_type {

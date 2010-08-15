@@ -51,6 +51,7 @@ static inline void allow_suspend(void)
 #include <mach/msm_rpc_version.h>
 #include "adsp.h"
 
+
 static struct adsp_info adsp_info;
 static struct msm_rpc_endpoint *rpc_cb_server_client;
 static struct msm_adsp_module *adsp_modules;
@@ -160,13 +161,13 @@ static int rpc_adsp_rtos_app_to_modem(uint32_t cmd, uint32_t module,
 		return rc;
 	}
 
-	if (be32_to_cpu(rpc_rsp.reply_stat) != RPCMSG_REPLYSTAT_ACCEPTED) {
+	if (be32_to_cpu(rpc_rsp->reply_stat) != RPCMSG_REPLYSTAT_ACCEPTED) {
 		pr_err("adsp: RPC call was denied!\n");
 		kfree(rpc_rsp);
 		return -EPERM;
 	}
 
-	if (be32_to_cpu(rpc_rsp.data.acc_hdr.accept_stat) !=
+	if (be32_to_cpu(rpc_rsp->data.acc_hdr.accept_stat) !=
 	    RPC_ACCEPTSTAT_SUCCESS) {
 		pr_err("adsp error: RPC call was not successful (%d)\n",
 		       be32_to_cpu(rpc_rsp->data.acc_hdr.accept_stat));
@@ -612,8 +613,6 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 	struct adsp_rtos_mp_mtoa_type	*pkt_ptr;
 	struct queue_to_offset_type	*qptr;
 	struct queue_to_offset_type	*qtbl;
-	struct mod_to_queue_offsets	*mqptr;
-	struct mod_to_queue_offsets	*mqtbl;
 	uint32_t	*mptr;
 	uint32_t	*mtbl;
 	uint32_t	q_idx;

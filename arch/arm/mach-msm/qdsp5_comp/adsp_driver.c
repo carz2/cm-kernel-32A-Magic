@@ -142,38 +142,11 @@ static int adsp_pmem_add(struct msm_adsp_module *module,
 	region->kvaddr = kvaddr;
 	region->len = len;
 	region->file = file;
-	pr_info("adsp_pmem_add module %s vaddr:0x%x paddr:0x%x len:%d\n",
-		module->name, region->vaddr, region->paddr, region->len);
+
 	hlist_add_head(&region->list, &module->pmem_regions);
 end:
 	mutex_unlock(&module->pmem_regions_lock);
 	return rc;
-}
-
-static int adsp_pmem_del(struct msm_adsp_module *module)
-{
-	struct hlist_node *node, *tmp;
-	struct adsp_pmem_region *region;
-
-	mutex_lock(&module->pmem_regions_lock);
-
-	hlist_for_each_safe(node, tmp, &module->pmem_regions) {
-		region = hlist_entry(node, struct adsp_pmem_region, list);
-		hlist_del(node);
-		put_pmem_file(region->file);
-
-		pr_info("%s name %s vaddr:0x%x paddr:0x%x len:%d\n",
-			__func__,
-			module->name,
-			region->vaddr,
-			region->paddr,
-			region->len);
-		kfree(region);
-	}
-	mutex_unlock(&module->pmem_regions_lock);
-	BUG_ON(!hlist_empty(&module->pmem_regions));
-
-	return 0;
 }
 
 static int adsp_pmem_lookup_vaddr(struct msm_adsp_module *module, void **addr,
@@ -294,7 +267,7 @@ static long adsp_write_cmd(struct adsp_device *adev, void __user *arg)
 
 	if (copy_from_user(cmd_data, (void __user *)(cmd.data), cmd.len)) {
 		rc = -EFAULT;
-		goto end2;
+		goto end;
 	}
 
 	mutex_lock(&adev->module->pmem_regions_lock);
@@ -307,7 +280,7 @@ static long adsp_write_cmd(struct adsp_device *adev, void __user *arg)
 	rc = msm_adsp_write(adev->module, cmd.queue, cmd_data, cmd.len);
 end:
 	mutex_unlock(&adev->module->pmem_regions_lock);
-end2:
+
 	if (cmd.len > 256)
 		kfree(cmd_data);
 
@@ -454,7 +427,7 @@ static long adsp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return msm_adsp_disable(adev->module);
 
 	case ADSP_IOCTL_DISABLE_EVENT_RSP:
-		return msm_adsp_disable_event_rsp(adev->module);
+		return 0;
 
 	case ADSP_IOCTL_DISABLE_ACK:
 		pr_err("adsp: ADSP_IOCTL_DISABLE_ACK is not implemented.\n");
@@ -475,9 +448,6 @@ static long adsp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return adsp_pmem_add(adev->module, &info);
 	}
 
-	case ADSP_IOCTL_UNREGISTER_PMEM:
-		return adsp_pmem_del(adev->module);
-
 	case ADSP_IOCTL_ABORT_EVENT_READ:
 		adev->abort = 1;
 		wake_up(&adev->event_wait);
@@ -493,20 +463,26 @@ static int adsp_release(struct inode *inode, struct file *filp)
 {
 	struct adsp_device *adev = filp->private_data;
 	struct msm_adsp_module *module = adev->module;
-	int rc = 0;
+	struct hlist_node *node, *tmp;
+	struct adsp_pmem_region *region;
+
+	pr_info("adsp_release() '%s'\n", adev->name);
 
 	/* clear module before putting it to avoid race with open() */
 	adev->module = NULL;
 
-	rc = adsp_pmem_del(module);
+	mutex_lock(&module->pmem_regions_lock);
+	hlist_for_each_safe(node, tmp, &module->pmem_regions) {
+		region = hlist_entry(node, struct adsp_pmem_region, list);
+		hlist_del(node);
+		put_pmem_file(region->file);
+		kfree(region);
+	}
+	mutex_unlock(&module->pmem_regions_lock);
+	BUG_ON(!hlist_empty(&module->pmem_regions));
 
 	msm_adsp_put(module);
-	if (strcmp(adev->name, "VIDEOENCTASK") == 0) {
-		pr_info("VIDEOENCTASK is closed, unset PWRSINK_VIDEO\n");
-		/* video recording end */
-		htc_pwrsink_set(PWRSINK_VIDEO, 0);
-	}
-	return rc;
+	return 0;
 }
 
 static void adsp_event(void *driver_data, unsigned id, size_t len,
@@ -532,6 +508,7 @@ static void adsp_event(void *driver_data, unsigned id, size_t len,
 		event->is16 = 0;
 		event->msg_id = id;
 		event->size = len;
+
 		getevent(event->data.msg16, len);
 	} else {
 		event->type = 1;
@@ -571,12 +548,6 @@ static int adsp_open(struct inode *inode, struct file *filp)
 		return rc;
 
 	pr_info("adsp_open() module '%s' adev %p\n", adev->name, adev);
-	if (strcmp(adev->name, "VIDEOENCTASK") == 0) {
-		pr_info("VIDEOENCTASK is opened, set PWRSINK_VIDEO\n");
-		/* video recording start */
-		htc_pwrsink_set(PWRSINK_VIDEO, 100);
-	}
-
 	filp->private_data = adev;
 	adev->abort = 0;
 	INIT_HLIST_HEAD(&adev->module->pmem_regions);

@@ -66,6 +66,8 @@ struct adsp_module_info {
 };
 
 #define ADSP_EVENT_MAX_SIZE 496
+#define EVENT_LEN	12
+#define EVENT_MSG_ID	((uint16_t)~0)
 
 struct adsp_event {
 	struct list_head list;
@@ -124,7 +126,21 @@ struct adsp_info {
 #define RPC_ADSP_RTOS_APP_TO_MODEM_PROC 2
 #define RPC_ADSP_RTOS_MODEM_TO_APP_PROC 2
 
-
+#if CONFIG_MSM_AMSS_VERSION == 6355
+#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x10001,0)
+#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0x20001,0) /* must be actual vers */
+#define MSM_ADSP_DRIVER_NAME "rs3000000a:0x10001"
+#elif (CONFIG_MSM_AMSS_VERSION == 6220) || (CONFIG_MSM_AMSS_VERSION == 6225)
+#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x71d1094b, 0)
+#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0xee3a9966, 0)
+#define MSM_ADSP_DRIVER_NAME "rs3000000a:71d1094b"
+#elif CONFIG_MSM_AMSS_VERSION == 6210
+#define RPC_ADSP_RTOS_ATOM_VERS MSM_RPC_VERS(0x20f17fd3, 0)
+#define RPC_ADSP_RTOS_MTOA_VERS MSM_RPC_VERS(0x75babbd6, 0)
+#define MSM_ADSP_DRIVER_NAME "rs3000000a:20f17fd3"
+#else
+#error "Unknown AMSS version"
+#endif
 
 enum rpc_adsp_rtos_proc_type {
 	RPC_ADSP_RTOS_PROC_NONE = 0,
@@ -173,9 +189,6 @@ enum qdsp_image_type {
 	QDSP_IMAGE_32BIT_DUMMY = 0x10000
 };
 
-#define	EVENT_LEN       12
-#define	EVENT_MSG_ID    (~0)
-
 struct adsp_rtos_mp_mtoa_header_type {
 	enum rpc_adsp_rtos_mod_status_type  event;
 	enum rpc_adsp_rtos_proc_type        proc_id;
@@ -201,12 +214,6 @@ struct adsp_rtos_mp_mtoa_type {
 struct queue_to_offset_type {
 	uint32_t	queue;
 	uint32_t	offset;
-};
-
-struct mod_to_queue_offsets {
-	uint32_t        module;
-	uint32_t        q_type;
-	uint32_t        q_max_len;
 };
 
 struct adsp_rtos_mp_mtoa_init_info_type {

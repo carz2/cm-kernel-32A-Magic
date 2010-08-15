@@ -120,11 +120,13 @@ static int32_t adsp_validate_queue(uint32_t mod_id, unsigned q_idx,
 
 uint32_t adsp_get_module(struct adsp_info *info, uint32_t task)
 {
+	BUG_ON(current_image == -1UL);
 	return info->task_to_module[current_image][task];
 }
 
 uint32_t adsp_get_queue_offset(struct adsp_info *info, uint32_t queue_id)
 {
+	BUG_ON(current_image == -1UL);
 	return info->queue_offset[current_image][queue_id];
 }
 
@@ -133,18 +135,25 @@ static int rpc_adsp_rtos_app_to_modem(uint32_t cmd, uint32_t module,
 {
 	int rc;
 	struct rpc_adsp_rtos_app_to_modem_args_t rpc_req;
-	struct rpc_reply_hdr rpc_rsp;
+	struct rpc_reply_hdr *rpc_rsp;
+
+	msm_rpc_setup_req(&rpc_req.hdr,
+			  rpc_adsp_rtos_atom_prog,
+			  rpc_adsp_rtos_atom_vers,
+			  RPC_ADSP_RTOS_APP_TO_MODEM_PROC);
 
 	rpc_req.gotit = cpu_to_be32(1);
 	rpc_req.cmd = cpu_to_be32(cmd);
 	rpc_req.proc_id = cpu_to_be32(RPC_ADSP_RTOS_PROC_APPS);
 	rpc_req.module = cpu_to_be32(module);
-	rc = msm_rpc_call_reply(adsp_module->rpc_client,
-					RPC_ADSP_RTOS_APP_TO_MODEM_PROC,
-					&rpc_req, sizeof(rpc_req),
-					&rpc_rsp, sizeof(rpc_rsp),
-					5 * HZ);
+	rc = msm_rpc_write(adsp_module->rpc_client, &rpc_req, sizeof(rpc_req));
+	if (rc < 0) {
+		pr_err("adsp: could not send RPC request: %d\n", rc);
+		return rc;
+	}
 
+	rc = msm_rpc_read(adsp_module->rpc_client,
+			  (void **)&rpc_rsp, -1, (5*HZ));
 	if (rc < 0) {
 		pr_err("adsp: error receiving RPC reply: %d (%d)\n",
 		       rc, -ERESTARTSYS);
@@ -153,16 +162,19 @@ static int rpc_adsp_rtos_app_to_modem(uint32_t cmd, uint32_t module,
 
 	if (be32_to_cpu(rpc_rsp.reply_stat) != RPCMSG_REPLYSTAT_ACCEPTED) {
 		pr_err("adsp: RPC call was denied!\n");
+		kfree(rpc_rsp);
 		return -EPERM;
 	}
 
 	if (be32_to_cpu(rpc_rsp.data.acc_hdr.accept_stat) !=
 	    RPC_ACCEPTSTAT_SUCCESS) {
 		pr_err("adsp error: RPC call was not successful (%d)\n",
-		       be32_to_cpu(rpc_rsp.data.acc_hdr.accept_stat));
+		       be32_to_cpu(rpc_rsp->data.acc_hdr.accept_stat));
+		kfree(rpc_rsp);
 		return -EINVAL;
 	}
 
+	kfree(rpc_rsp);
 	return 0;
 }
 
@@ -227,7 +239,6 @@ static void  msm_get_init_info(void)
 {
 	int rc;
 	struct rpc_adsp_rtos_app_to_modem_args_t rpc_req;
-	struct rpc_reply_hdr rpc_rsp;
 
 	adsp_info.init_info_rpc_client = msm_rpc_connect(
 		rpc_adsp_rtos_atom_prog,
@@ -240,18 +251,18 @@ static void  msm_get_init_info(void)
 		return;
 	}
 
+	msm_rpc_setup_req(&rpc_req.hdr,
+			rpc_adsp_rtos_atom_prog,
+			rpc_adsp_rtos_atom_vers,
+			RPC_ADSP_RTOS_APP_TO_MODEM_PROC);
 
 	rpc_req.gotit = cpu_to_be32(1);
 	rpc_req.cmd = cpu_to_be32(RPC_ADSP_RTOS_CMD_GET_INIT_INFO);
 	rpc_req.proc_id = cpu_to_be32(RPC_ADSP_RTOS_PROC_APPS);
 	rpc_req.module = 0;
 
-	rc = msm_rpc_call_reply(adsp_info.init_info_rpc_client,
-					RPC_ADSP_RTOS_APP_TO_MODEM_PROC,
-					&rpc_req, sizeof(rpc_req),
-					&rpc_rsp, sizeof(rpc_rsp),
-					5 * HZ);
-
+	rc = msm_rpc_write(adsp_info.init_info_rpc_client,
+				&rpc_req, sizeof(rpc_req));
 	if (rc < 0)
 		pr_err("adsp: could not send RPC request: %d\n", rc);
 }
@@ -265,8 +276,8 @@ int msm_adsp_get(const char *name, struct msm_adsp_module **out,
 	static uint32_t init_info_cmd_sent;
 
 	if (!init_info_cmd_sent) {
-		init_waitqueue_head(&adsp_info.init_info_wait);
 		msm_get_init_info();
+		init_waitqueue_head(&adsp_info.init_info_wait);
 		rc = wait_event_timeout(adsp_info.init_info_wait,
 			adsp_info.init_info_state == ADSP_STATE_INIT_INFO,
 			5 * HZ);
@@ -329,6 +340,7 @@ done:
 	mutex_unlock(&module->lock);
 	return rc;
 }
+EXPORT_SYMBOL(msm_adsp_get);
 
 static int msm_adsp_disable_locked(struct msm_adsp_module *module);
 
@@ -367,6 +379,7 @@ void msm_adsp_put(struct msm_adsp_module *module)
 	}
 	mutex_unlock(&module->lock);
 }
+EXPORT_SYMBOL(msm_adsp_put);
 
 /* this should be common code with rpc_servers.c */
 static int rpc_send_accepted_void_reply(struct msm_rpc_endpoint *client,
@@ -437,13 +450,13 @@ int __msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 	while (((ctrl_word = readl(info->write_ctrl)) &
 		ADSP_RTOS_WRITE_CTRL_WORD_READY_M) !=
 		ADSP_RTOS_WRITE_CTRL_WORD_READY_V) {
-		if (cnt > 10) {
+		if (cnt > 100) {
 			pr_err("adsp: timeout waiting for DSP write ready\n");
 			ret_status = -EIO;
 			goto fail;
 		}
 		pr_warning("adsp: waiting for DSP write ready\n");
-		udelay(10);
+		udelay(1);
 		cnt++;
 	}
 
@@ -474,12 +487,12 @@ int __msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 	while ((readl(info->write_ctrl) &
 		ADSP_RTOS_WRITE_CTRL_WORD_MUTEX_M) ==
 		ADSP_RTOS_WRITE_CTRL_WORD_MUTEX_NAVAIL_V) {
-		if (cnt > 5) {
+		if (cnt > 5000) {
 			pr_err("adsp: timeout waiting for adsp ack\n");
 			ret_status = -EIO;
 			goto fail;
 		}
-		mdelay(1);
+		udelay(1);
 		cnt++;
 	}
 
@@ -734,14 +747,11 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 		pr_info("adsp: unknown event %d\n", event);
 		rpc_send_accepted_void_reply(rpc_cb_server_client, req->xid,
 					     RPC_ACCEPTSTAT_GARBAGE_ARGS);
-		goto done;
+		mutex_unlock(&module->lock);
+		return;
 	}
 	rpc_send_accepted_void_reply(rpc_cb_server_client, req->xid,
 				     RPC_ACCEPTSTAT_SUCCESS);
-
-	if (module->ops->modem_event != NULL)
-		module->ops->modem_event(module->driver_data, image);
-done:
 	mutex_unlock(&module->lock);
 	event_addr = (uint32_t *)req;
 	module->ops->event(module->driver_data, EVENT_MSG_ID,
@@ -779,7 +789,7 @@ static int adsp_rpc_thread(void *data)
 {
 	void *buffer;
 	struct rpc_request_hdr *req;
-	int rc, exit = 0;
+	int rc;
 
 	do {
 		rc = msm_rpc_read(rpc_cb_server_client, &buffer, -1, -1);
@@ -812,7 +822,8 @@ static int adsp_rpc_thread(void *data)
 bad_rpc:
 		pr_err("adsp: bogus rpc from modem\n");
 		kfree(buffer);
-	} while (!exit);
+	} while (1);
+
 	do_exit(0);
 }
 
@@ -1035,6 +1046,7 @@ int msm_adsp_enable(struct msm_adsp_module *module)
 	mutex_unlock(&module->lock);
 	return rc;
 }
+EXPORT_SYMBOL(msm_adsp_enable);
 
 static int msm_adsp_disable_locked(struct msm_adsp_module *module)
 {
@@ -1063,20 +1075,13 @@ int msm_adsp_disable(struct msm_adsp_module *module)
 	mutex_unlock(&module->lock);
 	return rc;
 }
-
-int msm_adsp_disable_event_rsp(struct msm_adsp_module *module)
-{
-	int rc;
-	pr_info("msm_adsp_disable_event_rsp() '%s'\n", module->name);
-	rc = rpc_adsp_rtos_app_to_modem(RPC_ADSP_RTOS_CMD_DISABLE_EVENT_RSP,
-					module->id, module);
-	return rc;
-}
+EXPORT_SYMBOL(msm_adsp_disable);
 
 static int msm_adsp_probe(struct platform_device *pdev)
 {
 	unsigned count;
 	int rc, i;
+	int max_module_id;
 
 	wake_lock_init(&adsp_suspend_lock, WAKE_LOCK_SUSPEND, "adsp");
 	adsp_info.init_info_ptr = kzalloc(
@@ -1087,14 +1092,20 @@ static int msm_adsp_probe(struct platform_device *pdev)
 	rc = adsp_init_info(&adsp_info);
 	if (rc)
 		return rc;
-	adsp_info.send_irq += MSM_AD5_BASE;
-	adsp_info.read_ctrl += MSM_AD5_BASE;
-	adsp_info.write_ctrl += MSM_AD5_BASE;
+	adsp_info.send_irq += (uint32_t) MSM_AD5_BASE;
+	adsp_info.read_ctrl += (uint32_t) MSM_AD5_BASE;
+	adsp_info.write_ctrl += (uint32_t) MSM_AD5_BASE;
 	count = adsp_info.module_count;
 
+#if CONFIG_MSM_AMSS_VERSION >= 6350
+	max_module_id = count;
+#else
+	max_module_id = adsp_info.max_module_id + 1;
+#endif
+
 	adsp_modules = kzalloc(
-		(sizeof(struct msm_adsp_module) + sizeof(void *)) *
-		count, GFP_KERNEL);
+		sizeof(struct msm_adsp_module) * count +
+		sizeof(void *) * max_module_id, GFP_KERNEL);
 	if (!adsp_modules)
 		return -ENOMEM;
 
@@ -1169,7 +1180,7 @@ fail_request_irq:
 static struct platform_driver msm_adsp_driver = {
 	.probe = msm_adsp_probe,
 	.driver = {
-		.name = ADSP_DRIVER_NAME,
+		.name = MSM_ADSP_DRIVER_NAME,
 		.owner = THIS_MODULE,
 	},
 };

@@ -22,6 +22,7 @@
 #include <linux/types.h>
 #include <linux/msm_adsp.h>
 #include <mach/msm_rpcrouter.h>
+#include <mach/msm_rpc_version.h>
 #include <mach/msm_adsp.h>
 
 int adsp_pmem_fixup(struct msm_adsp_module *module, void **addr,
@@ -71,7 +72,7 @@ struct adsp_event {
 	struct list_head list;
 	uint32_t size; /* always in bytes */
 	uint16_t msg_id;
-	uint16_t type; /* 0 for msgs (from aDSP), 1 for events (from ARM9) */
+	uint16_t type; /* 0 for msgs (from aDSP), -1 for events (from ARM9) */
 	int is16; /* always 0 (msg is 32-bit) when the event type is 1(ARM9) */
 	union {
 		uint16_t msg16[ADSP_EVENT_MAX_SIZE / 2];
@@ -121,8 +122,6 @@ struct adsp_info {
 #define RPC_ADSP_RTOS_MTOA_NULL_PROC 0
 #define RPC_ADSP_RTOS_APP_TO_MODEM_PROC 2
 #define RPC_ADSP_RTOS_MODEM_TO_APP_PROC 2
-#define RPC_ADSP_RTOS_MODEM_TO_APP_EVENT_INFO_PROC 3
-#define RPC_ADSP_RTOS_MODEM_TO_APP_INIT_INFO_PROC 4
 
 enum rpc_adsp_rtos_proc_type {
 	RPC_ADSP_RTOS_PROC_NONE = 0,

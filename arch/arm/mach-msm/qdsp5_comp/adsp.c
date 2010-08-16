@@ -39,18 +39,18 @@
 static struct wake_lock adsp_suspend_lock;
 static inline void prevent_suspend(void)
 {
-	wake_lock(&adsp_suspend_lock);
+	wake_lock(&adsp_wake_lock);
 }
 static inline void allow_suspend(void)
 {
-	wake_unlock(&adsp_suspend_lock);
+	wake_unlock(&adsp_wake_lock);
 }
 
 #include <linux/io.h>
 #include <mach/msm_iomap.h>
-#include <mach/msm_rpc_version.h>
 #include "adsp.h"
 
+#define INT_ADSP INT_ADSP_A9_A11
 
 static struct adsp_info adsp_info;
 static struct msm_rpc_endpoint *rpc_cb_server_client;
@@ -424,6 +424,11 @@ int __msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 			module->name);
 		return -ENODEV;
 	}
+	if (dsp_queue_addr > QDSP_QUEUE_MAX) {
+		spin_unlock_irqrestore(&adsp_write_lock, flags);
+		pr_info("Invalid Queue Index: %d\n", dsp_queue_addr);
+		return -ENXIO;
+	}
 	if (adsp_validate_module(module->id)) {
 		spin_unlock_irqrestore(&adsp_write_lock, flags);
 		pr_info("adsp: module id validation failed %s  %d\n",
@@ -501,65 +506,64 @@ int __msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 	ctrl_word = readl(info->write_ctrl);
 
 	if ((ctrl_word & ADSP_RTOS_WRITE_CTRL_WORD_STATUS_M) !=
-	    ADSP_RTOS_WRITE_CTRL_WORD_NO_ERR_V) {
+			 ADSP_RTOS_WRITE_CTRL_WORD_NO_ERR_V) {
 		ret_status = -EAGAIN;
-		pr_err("adsp: failed to write queue %x, ctrl_word %x retry\n",
-			dsp_q_addr, ctrl_word);
 		goto fail;
+	}
+
+	/* Ctrl word status bits were 00, no error in the ctrl word */
+
+	/* Get the DSP buffer address */
+	dsp_addr = (ctrl_word & ADSP_RTOS_WRITE_CTRL_WORD_DSP_ADDR_M) +
+		   (uint32_t)MSM_AD5_BASE;
+
+	if (dsp_addr < (uint32_t)(MSM_AD5_BASE + QDSP_RAMC_OFFSET)) {
+		uint16_t *buf_ptr = (uint16_t *) cmd_buf;
+		uint16_t *dsp_addr16 = (uint16_t *)dsp_addr;
+		cmd_size /= sizeof(uint16_t);
+
+		/* Save the command ID */
+		cmd_id = (uint32_t) buf_ptr[0];
+
+		/* Copy the command to DSP memory */
+		cmd_size++;
+		while (--cmd_size)
+			*dsp_addr16++ = *buf_ptr++;
 	} else {
-		/* No error */
-		/* Get the DSP buffer address */
-		dsp_addr = (ctrl_word & ADSP_RTOS_WRITE_CTRL_WORD_DSP_ADDR_M) +
-			   (uint32_t)MSM_AD5_BASE;
+		uint32_t *buf_ptr = (uint32_t *) cmd_buf;
+		uint32_t *dsp_addr32 = (uint32_t *)dsp_addr;
+		cmd_size /= sizeof(uint32_t);
 
-		if (dsp_addr < (uint32_t)(MSM_AD5_BASE + QDSP_RAMC_OFFSET)) {
-			uint16_t *buf_ptr = (uint16_t *) cmd_buf;
-			uint16_t *dsp_addr16 = (uint16_t *)dsp_addr;
-			cmd_size /= sizeof(uint16_t);
+		/* Save the command ID */
+		cmd_id = buf_ptr[0];
 
-			/* Save the command ID */
-			cmd_id = (uint32_t) buf_ptr[0];
+		cmd_size++;
+		while (--cmd_size)
+			*dsp_addr32++ = *buf_ptr++;
+	}
 
-			/* Copy the command to DSP memory */
-			cmd_size++;
-			while (--cmd_size)
-				*dsp_addr16++ = *buf_ptr++;
-		} else {
-			uint32_t *buf_ptr = (uint32_t *) cmd_buf;
-			uint32_t *dsp_addr32 = (uint32_t *)dsp_addr;
-			cmd_size /= sizeof(uint32_t);
+	/* Set the mutex bits */
+	ctrl_word &= ~(ADSP_RTOS_WRITE_CTRL_WORD_MUTEX_M);
+	ctrl_word |=  ADSP_RTOS_WRITE_CTRL_WORD_MUTEX_NAVAIL_V;
 
-			/* Save the command ID */
-			cmd_id = buf_ptr[0];
+	/* Set the command bits to write done */
+	ctrl_word &= ~(ADSP_RTOS_WRITE_CTRL_WORD_CMD_M);
+	ctrl_word |= ADSP_RTOS_WRITE_CTRL_WORD_CMD_WRITE_DONE_V;
 
-			cmd_size++;
-			while (--cmd_size)
-				*dsp_addr32++ = *buf_ptr++;
-		}
+	/* Set the queue address bits */
+	ctrl_word &= ~(ADSP_RTOS_WRITE_CTRL_WORD_DSP_ADDR_M);
+	ctrl_word |= dsp_q_addr;
 
-		/* Set the mutex bits */
-		ctrl_word &= ~(ADSP_RTOS_WRITE_CTRL_WORD_MUTEX_M);
-		ctrl_word |=  ADSP_RTOS_WRITE_CTRL_WORD_MUTEX_NAVAIL_V;
+	writel(ctrl_word, info->write_ctrl);
 
-		/* Set the command bits to write done */
-		ctrl_word &= ~(ADSP_RTOS_WRITE_CTRL_WORD_CMD_M);
-		ctrl_word |= ADSP_RTOS_WRITE_CTRL_WORD_CMD_WRITE_DONE_V;
+	/* Generate an interrupt to the DSP.  It does not respond with
+	 * an interrupt, and we do not need to wait for it to
+	 * acknowledge, because it will hold the mutex lock until it's
+	 * ready to receive more commands again.
+	 */
+	writel(1, info->send_irq);
 
-		/* Set the queue address bits */
-		ctrl_word &= ~(ADSP_RTOS_WRITE_CTRL_WORD_DSP_ADDR_M);
-		ctrl_word |= dsp_q_addr;
-
-		writel(ctrl_word, info->write_ctrl);
-
-		/* Generate an interrupt to the DSP.  It does not respond with
-		 * an interrupt, and we do not need to wait for it to
-		 * acknowledge, because it will hold the mutex lock until it's
-		 * ready to receive more commands again.
-		 */
-		writel(1, info->send_irq);
-
-		module->num_commands++;
-	} /* Ctrl word status bits were 00, no error in the ctrl word */
+	module->num_commands++;
 
 fail:
 	spin_unlock_irqrestore(&adsp_write_lock, flags);
@@ -651,11 +655,7 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 				qtbl[e_idx].queue = be32_to_cpu(qptr->queue);
 				q_idx = be32_to_cpu(qptr->queue);
 				iptr->queue_offsets[i_no][q_idx] =
-							qtbl[e_idx].offset;
-#if 0
-				pr_info("iptr->queue_offsets[%d][%d] = %x\n",
-				i_no, q_idx, iptr->queue_offsets[i_no][q_idx]);
-#endif
+						qtbl[e_idx].offset;
 				qptr++;
 			}
 		}
@@ -669,9 +669,6 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 			for (e_idx = 0; e_idx < entries_per_image; e_idx++) {
 				mtbl[e_idx] = be32_to_cpu(*mptr);
 				mptr++;
-#if 0
-				pr_info("mtbl[%d] = %x\n", e_idx, mtbl[e_idx]);
-#endif
 			}
 		}
 
@@ -826,27 +823,33 @@ bad_rpc:
 	do_exit(0);
 }
 
-static size_t read_event_size;
+static size_t read_event_len;
 static void *read_event_addr;
 
-static void read_event_16(void *buf, size_t len)
+static void read_event_16(void *buf, size_t size)
 {
 	uint16_t *dst = buf;
 	uint16_t *src = read_event_addr;
-	len /= 2;
-	if (len > read_event_size)
-		len = read_event_size;
+	size_t len = size / 2;
+	if (len > read_event_len)
+		len = read_event_len;
+	else if (len < read_event_len)
+		pr_warning("%s: event bufer length too small (%d < %d)\n",
+			__func__, len, read_event_len);
 	while (len--)
 		*dst++ = *src++;
 }
 
-static void read_event_32(void *buf, size_t len)
+static void read_event_32(void *buf, size_t size)
 {
 	uint32_t *dst = buf;
 	uint32_t *src = read_event_addr;
-	len /= 2;
-	if (len > read_event_size)
-		len = read_event_size;
+	size_t len = size / 4;
+	if (len > read_event_len)
+		len = read_event_len;
+	else if (len < read_event_len)
+		pr_warning("%s: event bufer length too small (%d < %d)\n",
+			__func__, len, read_event_len);
 	while (len--)
 		*dst++ = *src++;
 }
@@ -865,18 +868,18 @@ static int adsp_rtos_read_ctrl_word_cmd_tast_to_h_v(
 		uint32_t tmp = *dsp_addr32++;
 		rtos_task_id = (tmp & ADSP_RTOS_READ_CTRL_WORD_TASK_ID_M) >> 8;
 		msg_id = (tmp & ADSP_RTOS_READ_CTRL_WORD_MSG_ID_M);
-		read_event_size = tmp >> 16;
+		read_event_len = tmp >> 16;
 		read_event_addr = dsp_addr32;
-		msg_length = read_event_size * sizeof(uint32_t);
+		msg_length = read_event_len * sizeof(uint32_t);
 		func = read_event_32;
 	} else {
 		uint16_t *dsp_addr16 = dsp_addr;
 		uint16_t tmp = *dsp_addr16++;
 		rtos_task_id = (tmp & ADSP_RTOS_READ_CTRL_WORD_TASK_ID_M) >> 8;
 		msg_id = tmp & ADSP_RTOS_READ_CTRL_WORD_MSG_ID_M;
-		read_event_size = *dsp_addr16++;
+		read_event_len = *dsp_addr16++;
 		read_event_addr = dsp_addr16;
-		msg_length = read_event_size * sizeof(uint16_t);
+		msg_length = read_event_len * sizeof(uint16_t);
 		func = read_event_16;
 	}
 
@@ -998,6 +1001,14 @@ static irqreturn_t adsp_irq_handler(int irq, void *data)
 	if (cnt == 15)
 		pr_err("adsp: too many (%d) events for single irq!\n", cnt);
 	return IRQ_HANDLED;
+}
+
+int adsp_set_clkrate(struct msm_adsp_module *module, unsigned long clk_rate)
+{
+	if (module->clk && clk_rate)
+		return clk_set_rate(module->clk, clk_rate);
+
+	return -EINVAL;
 }
 
 int msm_adsp_enable(struct msm_adsp_module *module)

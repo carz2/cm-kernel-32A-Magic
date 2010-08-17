@@ -22,6 +22,7 @@
 #include <linux/types.h>
 #include <linux/msm_adsp.h>
 #include <mach/msm_rpcrouter.h>
+#include <mach/msm_rpc_version.h>
 #include <mach/msm_adsp.h>
 
 int adsp_pmem_fixup(struct msm_adsp_module *module, void **addr,
@@ -121,8 +122,6 @@ struct adsp_info {
 #define RPC_ADSP_RTOS_MTOA_NULL_PROC 0
 #define RPC_ADSP_RTOS_APP_TO_MODEM_PROC 2
 #define RPC_ADSP_RTOS_MODEM_TO_APP_PROC 2
-#define RPC_ADSP_RTOS_MODEM_TO_APP_EVENT_INFO_PROC 3
-#define RPC_ADSP_RTOS_MODEM_TO_APP_INIT_INFO_PROC 4
 
 enum rpc_adsp_rtos_proc_type {
 	RPC_ADSP_RTOS_PROC_NONE = 0,

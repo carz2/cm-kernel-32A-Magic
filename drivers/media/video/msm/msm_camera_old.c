@@ -704,7 +704,7 @@ static int msm_get_stats(struct msm_sync *sync, void __user *arg)
 		se.stats_event.msg_id = data->evt_msg.msg_id;
 		se.stats_event.len    = data->evt_msg.len;
 
-		CDBG("%s: qcmd->type %d length %d msd_id %d\n", __func__,
+		CDBG("%s: qcmd->type %d length %d msg_id %d\n", __func__,
 			qcmd->type,
 			se.stats_event.len,
 			se.stats_event.msg_id);

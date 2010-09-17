@@ -39,15 +39,10 @@
 
 #define MSG_STOP_ACK  1
 #define MSG_SNAPSHOT  2
-#define MSG_START_ACK 4
 #define MSG_OUTPUT1   6
 #define MSG_OUTPUT2   7
 #define MSG_STATS_AF  8
 #define MSG_STATS_WE  9
-
-
-#define VFE_ADSP_EVENT 0xFFFFFFFF
-
 
 static struct msm_adsp_module *qcam_mod;
 static struct msm_adsp_module *vfe_mod;
@@ -59,11 +54,6 @@ static void *vfe_syncdata;
 static uint8_t vfestopped;
 
 static struct stop_event stopevent;
-
-static struct clk *ebi1_clk;
-static const char *const clk_name = "ebi1_clk";
-
-static uint8_t vfe_operationmode; /*1 for yuv snapshot, 0 for other*/
 
 static void vfe_7x_convert(struct msm_vfe_phy_info *pinfo,
 			   enum vfe_resp_msg type,
@@ -115,7 +105,7 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 	struct msm_vfe_resp *rp;
 	void *data;
 
-	len = (id == VFE_ADSP_EVENT) ? 0 : len;
+	len = (id == (uint16_t)-1) ? 0 : len;
 	data = resp->vfe_alloc(sizeof(struct msm_vfe_resp) + len,
 			vfe_syncdata,
 			GFP_ATOMIC);
@@ -126,9 +116,8 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 	}
 	rp = (struct msm_vfe_resp *)data;
 	rp->evt_msg.len = len;
-	rp->evt_msg.exttype = 0;
 
-	if (id == VFE_ADSP_EVENT) {
+	if (id == ((uint16_t)-1)) {
 		/* event */
 		rp->type = VFE_EVENT;
 		rp->evt_msg.type = MSM_CAMERA_EVT;
@@ -145,10 +134,6 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 		getevent(rp->evt_msg.data, len);
 
 		switch (rp->evt_msg.msg_id) {
-		case MSG_START_ACK:
-			if (vfe_operationmode == 1)
-				rp->evt_msg.exttype = VFE_MSG_SNAPSHOT;
-			break;
 		case MSG_SNAPSHOT:
 			rp->type = VFE_MSG_SNAPSHOT;
 			break;
@@ -244,15 +229,6 @@ static int vfe_7x_stop(void)
 
 static void vfe_7x_release(struct platform_device *pdev)
 {
-	struct msm_sensor_ctrl *sctrl =
-		&((struct msm_sync *)vfe_syncdata)->sctrl;
-
-	if (ebi1_clk) {
-		clk_set_rate(ebi1_clk, 0);
-		clk_put(ebi1_clk);
-		ebi1_clk = 0;
-	}
-
 	mutex_lock(&vfe_lock);
 	vfe_syncdata = NULL;
 	mutex_unlock(&vfe_lock);
@@ -265,9 +241,6 @@ static void vfe_7x_release(struct platform_device *pdev)
 
 	msm_adsp_disable(qcam_mod);
 	msm_adsp_disable(vfe_mod);
-
-	if (sctrl)
-		sctrl->s_release();
 
 	msm_adsp_put(qcam_mod);
 	msm_adsp_put(vfe_mod);
@@ -282,19 +255,6 @@ static int vfe_7x_init(struct msm_vfe_callback *presp,
 		       struct platform_device *dev)
 {
 	int rc = 0;
-
-	ebi1_clk = clk_get(NULL, clk_name);
-	if (!ebi1_clk) {
-		pr_err("%s: could not get %s\n", __func__, clk_name);
-		return -EIO;
-	}
-
-	rc = clk_set_rate(ebi1_clk, 128000000);
-	if (rc < 0) {
-		pr_err("%s: clk_set_rate(%s) failed: %d\n", __func__,
-			clk_name, rc);
-		return rc;
-	}
 
 	init_waitqueue_head(&stopevent.wait);
 	stopevent.timeout = 200;
@@ -419,7 +379,7 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 	void *cmd_data = NULL;
 	void *cmd_data_alloc = NULL;
 	long rc = 0;
-	struct msm_vfe_command_7k *vfecmd = NULL;
+	struct msm_vfe_command_7k *vfecmd;
 
 	vfecmd = kmalloc(sizeof(struct msm_vfe_command_7k), GFP_ATOMIC);
 	if (!vfecmd) {
@@ -645,6 +605,7 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 				switch (*(uint32_t *) cmd_data) {
 				case VFE_RESET_CMD:
 					msm_camio_vfe_blk_reset();
+					msm_camio_camif_pad_reg_reset_2();
 					vfestopped = 0;
 					break;
 
@@ -683,7 +644,6 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 				goto config_done;
 			}
 
-			vfe_operationmode = 0;
 			vfe_7x_config_axi(OUTPUT_1, axid, axio);
 
 			cmd_data = axio;
@@ -710,7 +670,6 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 				goto config_done;
 			}
 
-			vfe_operationmode = 0;
 			vfe_7x_config_axi(OUTPUT_2, axid, axio);
 			cmd_data = axio;
 		}
@@ -735,7 +694,6 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 				goto config_done;
 			}
 
-			vfe_operationmode = 1;
 			vfe_7x_config_axi(OUTPUT_1_AND_2, axid, axio);
 
 			cmd_data = axio;
@@ -750,18 +708,15 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 		goto config_done;
 
 config_send:
-	/* HTC: check cmd_data */
-	if (cmd_data) {
 	CDBG("send adsp command = %d\n", *(uint32_t *) cmd_data);
 	rc = msm_adsp_write(vfe_mod, vfecmd->queue, cmd_data, vfecmd->length);
-	}
+
 config_done:
 	if (cmd_data_alloc != NULL)
 		kfree(cmd_data_alloc);
 
 config_failure:
 	kfree(scfg);
-	kfree(sfcfg);
 	kfree(axio);
 	kfree(vfecmd);
 	return rc;
